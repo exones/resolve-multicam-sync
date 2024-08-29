@@ -159,6 +159,12 @@ try:
             
             return cls.from_total_frames(total_frames, frame_rate)
 
+        def to_timedelta(self) -> timedelta:
+            total_frames = self.to_total_frames()
+            total_seconds = total_frames / self.frame_rate
+            
+            return timedelta(seconds=total_seconds)
+
         def __str__(self):
             return f"{self.hours:02d}:{self.minutes:02d}:{self.seconds:02d}:{self.frames:02d}"
     
@@ -525,12 +531,12 @@ try:
             'offset': Timecode(current_project_framerate, 0, 0, 0, 0),
         } 
 
-    all_cameras_earliest_creation_time = min([camera["minimum_creation_time"] for camera in cameras.values()])
+    zero_creation_time = min([camera["minimum_creation_time"] for camera in cameras.values()])
 
     # -- Calculate default camera offsets considering they all started recording roughly at the same time --
     for camera in cameras.values():        
         camera_earliest_creation_time = camera["minimum_creation_time"]
-        offset_time_delta = camera_earliest_creation_time - all_cameras_earliest_creation_time
+        offset_time_delta = camera_earliest_creation_time - zero_creation_time
         offset_timecode = Timecode.from_timedelta(offset_time_delta, current_project_framerate)
         
         print_debug(f"Camera '{camera_name}': earliest creation time = {camera_earliest_creation_time}, offset time  = {offset_time_delta}, offset timecode = {offset_timecode}")
@@ -595,8 +601,13 @@ try:
                 root.destroy()
             return dialog_result
 
+    camera_offsets = {}
+
     if (show_ui):
         camera_offsets = show_dialog_with_editable_camera_offsets(cameras)
+        
+        for camera_name, camera_offset in camera_offsets.items():
+            cameras[camera_name]["offset"] = camera_offset
     else:
         camera_offsets = map(lambda camera: camera["offset"], cameras.values())
         
@@ -618,17 +629,20 @@ try:
             camera_name = clip_record["camera_name"]
             frame_rate = clip_metadata["frame_rate"]
             nb_frames = clip_metadata["nb_frames"]
-            camera_offset = camera["offset"]
+            camera_offset: Timecode = camera["offset"]
             
             clip_creation_time = get_creation_time(clip_metadata, start_time_source)            
-            time_delta = clip_creation_time - all_cameras_earliest_creation_time            
-            original_start_timecode = Timecode.from_timedelta(time_delta, current_project_framerate)            
-            start_timecode = original_start_timecode - camera_offset            
+            camera_offset_time_delta = camera_offset.to_timedelta()
+            adjusted_clip_creation_time = clip_creation_time - camera_offset_time_delta
+                        
+            time_delta = adjusted_clip_creation_time - zero_creation_time
+            start_timecode = Timecode.from_timedelta(time_delta, current_project_framerate)            
             
             print_debug(f"Clip '{clip.GetName()}' (Camera {camera_name}): creation time = {clip_creation_time}")
-            print_debug(f"  camera offset = {camera_offset}")
+            print_debug(f"  clip creation time = {clip_creation_time}")
+            print_debug(f"  camera offset time delta = {camera_offset_time_delta}")
+            print_debug(f"  adjusted clip creation time = {adjusted_clip_creation_time}")    
             print_debug(f"  time delta = {time_delta}")
-            print_debug(f"  original start timecode = {original_start_timecode}")
             print_debug(f"  start timecode = {start_timecode}")
                                 
             # end_timecode = get_end_timecode(start_timecode, nb_frames, current_project_framerate)                    
