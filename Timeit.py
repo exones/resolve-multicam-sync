@@ -41,11 +41,11 @@ def print_question(message):
 try:
     class StartTimeSource(Enum):
         OS_FILE_CREATION_TIME = 1
-        TAG_CREATION_TIME = 2
+        FORMAT_TAG_CREATION_TIME = 2
 
     # Default params
 
-    start_time_source: StartTimeSource = StartTimeSource.TAG_CREATION_TIME
+    start_time_source: StartTimeSource = StartTimeSource.FORMAT_TAG_CREATION_TIME
     camera_property: str = "Angle"
     show_ui: bool = True
     debug: bool = False
@@ -160,7 +160,7 @@ try:
             return cls.from_total_frames(total_frames, frame_rate)
 
         def __str__(self):
-            return f"{self.hours:02d}:{self.minutes:02d}:{self.seconds:d}:{self.frames:02d}"
+            return f"{self.hours:02d}:{self.minutes:02d}:{self.seconds:02d}:{self.frames:02d}"
     
 
     # --- Functions ---
@@ -168,7 +168,7 @@ try:
     def get_creation_time(clip_metadata: dict, start_time_source: StartTimeSource) -> datetime:
         if start_time_source == StartTimeSource.OS_FILE_CREATION_TIME:
             return clip_metadata["os_creation_time"]
-        elif start_time_source == StartTimeSource.TAG_CREATION_TIME:
+        elif start_time_source == StartTimeSource.FORMAT_TAG_CREATION_TIME:
             return clip_metadata["creation_time"]
         else:
             return None
@@ -204,7 +204,7 @@ try:
                     print_error(f"Error running ffprobe for '{file_path}' (command '{cmd}') (exit code {proc.returncode}).\n stderr:\n{stderr}\n\nstdout:\n{stdout}")
                     return None
                 
-                print_debug(f"stdout: {stdout}")
+                # print_debug(f"stdout: {stdout}")
                 metadata = json.loads(stdout)
                 return metadata                        
         except Exception as e:
@@ -229,8 +229,7 @@ try:
         # file path, size, creation time etc.
         
         creation_time_iso = ffmpeg_metadata["format"]["tags"]["creation_time"]
-        creation_time = datetime.fromisoformat(creation_time_iso.replace("Z", "+00:00"))
-        
+        creation_time = datetime.fromisoformat(creation_time_iso)                        
         os_creation_timestamp = os.path.getctime(clipPath)
         os_creation_time = datetime.fromtimestamp(os_creation_timestamp)
         
@@ -468,7 +467,7 @@ try:
     creation_time_property = None
     if (start_time_source == StartTimeSource.OS_FILE_CREATION_TIME):
         creation_time_property = "os_creation_time"
-    elif (start_time_source == StartTimeSource.TAG_CREATION_TIME):
+    elif (start_time_source == StartTimeSource.FORMAT_TAG_CREATION_TIME):
         creation_time_property = "creation_time"
 
     # --- Obtain clips metadata per camera ---
@@ -530,9 +529,11 @@ try:
 
     # -- Calculate default camera offsets considering they all started recording roughly at the same time --
     for camera in cameras.values():        
-        camera_minimum_creation_time = camera["minimum_creation_time"]
-        offset_time_delta = camera_minimum_creation_time - all_cameras_earliest_creation_time
+        camera_earliest_creation_time = camera["minimum_creation_time"]
+        offset_time_delta = camera_earliest_creation_time - all_cameras_earliest_creation_time
         offset_timecode = Timecode.from_timedelta(offset_time_delta, current_project_framerate)
+        
+        print_debug(f"Camera '{camera_name}': earliest creation time = {camera_earliest_creation_time}, offset time  = {offset_time_delta}, offset timecode = {offset_timecode}")
         
         camera["offset"] = offset_timecode
         
@@ -619,14 +620,15 @@ try:
             nb_frames = clip_metadata["nb_frames"]
             camera_offset = camera["offset"]
             
-            clip_creation_time = get_creation_time(clip_metadata, start_time_source)
-            print_debug(f"Clip '{clip.GetName()}' (Camera {camera_name}): creation time = {clip_creation_time}")
-            time_delta = clip_creation_time - all_cameras_earliest_creation_time
-            print_debug(f"  camera offset = {camera_offset}")
-            print_debug(f"  time delta = {time_delta}")            
-            original_start_timecode = Timecode.from_timedelta(time_delta, current_project_framerate)
-            print_debug(f"  original start timecode = {original_start_timecode}")
+            clip_creation_time = get_creation_time(clip_metadata, start_time_source)            
+            time_delta = clip_creation_time - all_cameras_earliest_creation_time            
+            original_start_timecode = Timecode.from_timedelta(time_delta, current_project_framerate)            
             start_timecode = original_start_timecode - camera_offset            
+            
+            print_debug(f"Clip '{clip.GetName()}' (Camera {camera_name}): creation time = {clip_creation_time}")
+            print_debug(f"  camera offset = {camera_offset}")
+            print_debug(f"  time delta = {time_delta}")
+            print_debug(f"  original start timecode = {original_start_timecode}")
             print_debug(f"  start timecode = {start_timecode}")
                                 
             # end_timecode = get_end_timecode(start_timecode, nb_frames, current_project_framerate)                    
