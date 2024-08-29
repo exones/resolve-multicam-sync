@@ -7,6 +7,7 @@ import json
 import os
 import tkinter as tk
 from tkinter import simpledialog, messagebox, ttk
+import time
 
 def print_error(message) -> None:
     print(f"❌ [ERROR] {message}")
@@ -171,24 +172,45 @@ try:
             return clip_metadata["creation_time"]
         else:
             return None
-
     
-
     def get_clip_ffmpeg_metadata(file_path):    
         startup_info = None
         if os.name == 'nt':  # Check if the OS is Windows
             startup_info = subprocess.STARTUPINFO()
             startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            
+        file_path = 'F:\\Footage\\2024-06-22 валентина - арман\\camera1\\CLIP\\C0001.MP4'
                     
         cmd = [
-            'ffprobe', '-i', file_path, '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams'
+            # 'ffprobe', '-i', file_path, '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams'
+            'ffprobe', file_path, '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams'
         ]
         
-        print_trace(f"Running command: {' '.join(cmd)}")
+        timeout=5
         
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, startupinfo=startup_info)
-        metadata = json.loads(result.stdout)
-        return metadata
+        try:
+            print_debug(f"Running command: {' '.join(cmd)}")
+            
+            time.sleep(0.1)
+            with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, startupinfo=startup_info) as proc:
+                try:                
+                    stdout, stderr = proc.communicate(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    stdout, stderr = proc.communicate()
+                    print_error(f"Timeout expired for ffprobe command on '{file_path}'")
+                    return None
+                
+                if proc.returncode != 0:
+                    print_error(f"Error running ffprobe for '{file_path}' (command '{cmd}') (exit code {proc.returncode}).\n stderr:\n{stderr}\n\nstdout:\n{stdout}")
+                    return None
+                
+                print_debug(f"stdout: {stdout}")
+                metadata = json.loads(stdout)
+                return metadata                        
+        except Exception as e:
+            print_error(f"Error running ffprobe for '{file_path}': {str(e)}")
+            return None
 
     def get_clip_metadata(clip):
         clipPath = clip.GetClipProperty("File Path")
@@ -407,7 +429,7 @@ try:
     root = tk.Tk()
     root.withdraw()  # Hide the root window
 
-    # Create a progress bar window
+    # # Create a progress bar window
     progress_window = tk.Toplevel(root)
     progress_window.title("Processing Clips")
     progress_label = tk.Label(progress_window, text="Processing clips...")
@@ -494,6 +516,8 @@ try:
             'offset': Timecode(current_project_framerate, 0, 0, 0, 0),
         } 
 
+    # root.mainloop()
+
     all_cameras_earliest_creation_time = min([camera["minimum_creation_time"] for camera in cameras.values()])
 
     # -- Calculate default camera offsets considering they all started recording roughly at the same time --
@@ -545,7 +569,7 @@ try:
     progress_bar["value"] = float(0)
     progress_label["text"] = f"Waiting for user input... ({nb_clips_processed} of {nb_clips_total})"
     progress_bar["mode"] = "indeterminate"
-    progress_window.update()
+    progress_window.update_idletasks()
         
     def show_dialog_with_editable_camera_offsets(cameras: dict) -> dict:
         # Create a dialog window
@@ -555,7 +579,7 @@ try:
         dialog_result = None
         try:
             dialog = CameraOffsetsDialog(root, title="Camera Offsets", cameras = cameras)
-            dialog.update()
+            dialog.update_idletasks()
             
             dialog_result = dialog.result
 
@@ -570,7 +594,7 @@ try:
         exit()
     
     progress_bar["mode"] = "determinate"
-    progress_window.update()
+    progress_window.update_idletasks()
 
     # -- Set "Start TC" and "End TC" for all clips, as well as "Camera #" --
     # Earliest clip will be the reference for the multicam clip being "00:00:00:00"
@@ -609,9 +633,8 @@ try:
             nb_clips_processed += 1
             progress_bar["value"] = float(nb_clips_processed) / nb_clips_total * 100
             progress_label["text"] = f"Setting clips time codes and angles... ({nb_clips_processed} of {nb_clips_total})"
-            progress_window.update()
-
-    root.destroy()
+            progress_window.update_idletasks()
+    
 except Exception as e:
     print_error(str(e))
     raise e
