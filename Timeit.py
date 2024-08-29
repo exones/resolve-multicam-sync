@@ -35,10 +35,6 @@ def print_question(message):
     print(f"❓{message}")
     print(f"❓")
 
-# Default params
-
-
-
 # --- Classes ---
 
 
@@ -47,11 +43,15 @@ try:
         OS_FILE_CREATION_TIME = 1
         TAG_CREATION_TIME = 2
 
+    # Default params
+
     start_time_source: StartTimeSource = StartTimeSource.TAG_CREATION_TIME
     camera_property: str = "Angle"
+    show_ui: bool = True
     debug: bool = False
     multicam_clip_name: str = "multicam"
     clips_number_limit: int = 1000000
+    
         
     class Timecode:
         # properties
@@ -179,19 +179,18 @@ try:
             startup_info = subprocess.STARTUPINFO()
             startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             
-        file_path = 'F:\\Footage\\2024-06-22 валентина - арман\\camera1\\CLIP\\C0001.MP4'
+        # file_path = 'F:\\Footage\\2024-06-22 валентина - арман\\camera1\\CLIP\\C0001.MP4'
                     
         cmd = [
             # 'ffprobe', '-i', file_path, '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams'
             'ffprobe', file_path, '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams'
         ]
         
-        timeout=5
+        timeout=10
         
         try:
             print_debug(f"Running command: {' '.join(cmd)}")
             
-            time.sleep(0.1)
             with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, startupinfo=startup_info) as proc:
                 try:                
                     stdout, stderr = proc.communicate(timeout=timeout)
@@ -332,19 +331,20 @@ try:
                 "debug": self.debug_var.get()
             }
 
+    root = tk.Tk()
+    root.withdraw()  # Hide the root window
+
     def show_settings_dialog(camera_names: list[str]) -> dict:
         # Create a dialog window
-        root = tk.Tk()
-        root.withdraw()  # Hide the root window
+        global root
         
         dialog_result = None
-        try:
-            dialog = SettingsDialog(root, title="Timecode Generator Settings", camera_names = camera_names)
-            dialog.update()
-            
+        dialog = SettingsDialog(root, title="Timecode Generator Settings", camera_names = camera_names)
+        try:            
+            dialog.update_idletasks()            
             dialog_result = dialog.result            
         finally:
-            root.destroy()
+            dialog.destroy()
             
         return dialog_result
 
@@ -401,19 +401,19 @@ try:
         
     print(f"Total number of clips: {nb_clips_total}")
         
-        
-    # ask the user if they want to proceed and show settings dialog
-    settings = show_settings_dialog(camera_names)
+    if (True): # ask for settings
+        # ask the user if they want to proceed and show settings dialog
+        settings = show_settings_dialog(camera_names)
 
-    if (settings == None):
-        print_warning("Operation cancelled by user")
-        exit()
+        if (settings == None):
+            print_warning("Operation cancelled by user")
+            exit()
 
-    multicam_clip_name = settings["multicam_clip_name"]
-    start_time_source = StartTimeSource[settings["start_time_source"]]
-    camera_property = settings["camera_property"]
-    debug = settings["debug"]
-    clips_number_limit = settings["clips_number_limit"]
+        multicam_clip_name = settings["multicam_clip_name"]
+        start_time_source = StartTimeSource[settings["start_time_source"]]
+        camera_property = settings["camera_property"]
+        debug = settings["debug"]
+        clips_number_limit = settings["clips_number_limit"]
 
     # Prompt for user confirmation using tkinter
 
@@ -426,31 +426,42 @@ try:
     # # Prompt for user input using tkinter with default value "multicam"
     # multicam_clip_name = simpledialog.askstring("Multicam name", "Enter the name of the multicam clip", initialvalue="multicam")    
 
-    root = tk.Tk()
-    root.withdraw()  # Hide the root window
-
-    # # Create a progress bar window
-    progress_window = tk.Toplevel(root)
-    progress_window.title("Processing Clips")
-    progress_label = tk.Label(progress_window, text="Processing clips...")
-    progress_label.pack(pady=10)
-    progress_bar = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="determinate")
-    progress_bar.pack(pady=10)
-    progress_window.update()
-
-    nb_clips_processed = 0
-
-    # Variable to track cancellation
     cancelled = False
+    nb_clips_processed = 0
+    progress_bar = None
+    progress_label = None
+    progress_window = None
+        
+    if (True):
+        # # Create a progress bar window
+        progress_window = tk.Toplevel(root)
+        progress_window.title("Processing Clips")
+        progress_label = tk.Label(progress_window, text="Processing clips...")
+        progress_label.pack(pady=10)
+        progress_bar = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="determinate")
+        progress_bar.pack(pady=10)
 
-    def cancel_processing():
-        global cancelled
-        cancelled = True
-        progress_window.destroy()
+        def cancel_processing():
+            global cancelled
+            cancelled = True
+            progress_window.destroy()
 
-    cancel_button = tk.Button(progress_window, text="Cancel", command=cancel_processing)
-    cancel_button.pack(pady=10)
-    progress_window.update()
+        cancel_button = tk.Button(progress_window, text="Cancel", command=cancel_processing)
+        cancel_button.pack(pady=10)
+        progress_window.update()
+
+    def update_progress_bar(value: float | int, text):                        
+        global show_ui
+        if (True):            
+            global progress_bar
+            global progress_window
+            global progress_label
+            
+            progress_bar["value"] = int(value)
+            progress_label["text"] = text
+            progress_bar.update_idletasks()
+            progress_label.update_idletasks()
+            progress_window.update()
 
     # class for timecode
 
@@ -462,7 +473,7 @@ try:
 
     # --- Obtain clips metadata per camera ---
     cameras = {}
-    cameraIndex = 0
+    cameraIndex = 0    
     for sub_folder in sub_folders.values():
         if cancelled:
             print_warning("Processing cancelled by user.")
@@ -498,9 +509,8 @@ try:
             }
             clips_with_metadata.append(clip_record)
             nb_clips_processed += 1
-            progress_bar["value"] = float(nb_clips_processed) / nb_clips_total * 100
-            progress_label["text"] = f"Reading clips information (Camera '{camera_name}')... ({nb_clips_processed} of {nb_clips_total})"
-            progress_window.update()
+            
+            update_progress_bar(float(nb_clips_processed) / nb_clips_total * 100, f"Reading clips information (Camera '{camera_name}')... ({nb_clips_processed} of {nb_clips_total})")
             
             creation_time = get_creation_time(clip_metadata, start_time_source)
             
@@ -515,8 +525,6 @@ try:
             'minimum_creation_time_clip': minimum_creation_time_clip,
             'offset': Timecode(current_project_framerate, 0, 0, 0, 0),
         } 
-
-    # root.mainloop()
 
     all_cameras_earliest_creation_time = min([camera["minimum_creation_time"] for camera in cameras.values()])
 
@@ -565,30 +573,32 @@ try:
                 except ValueError as e:
                     print_error(f"Invalid timecode format for camera '{camera_name}': {offset_str}. Please use the format HH:MM:SS:FF")
                     return                        
-        
-    progress_bar["value"] = float(0)
-    progress_label["text"] = f"Waiting for user input... ({nb_clips_processed} of {nb_clips_total})"
-    progress_bar["mode"] = "indeterminate"
-    progress_window.update_idletasks()
+    
+    update_progress_bar(float(0), f"Waiting for user input... ({nb_clips_processed} of {nb_clips_total})")        
         
     def show_dialog_with_editable_camera_offsets(cameras: dict) -> dict:
-        # Create a dialog window
-        root = tk.Tk()
-        root.withdraw()  # Hide the root window
+        if (show_ui):
+            # Create a dialog window
+            root = tk.Tk()
+            root.withdraw()  # Hide the root window
+            
+            dialog_result = None
+            try:
+                dialog = CameraOffsetsDialog(root, title="Camera Offsets", cameras = cameras)
+                dialog.update_idletasks()
+                
+                dialog_result = dialog.result
+
+                
+            finally:
+                root.destroy()
+            return dialog_result
+
+    if (show_ui):
+        camera_offsets = show_dialog_with_editable_camera_offsets(cameras)
+    else:
+        camera_offsets = map(lambda camera: camera["offset"], cameras.values())
         
-        dialog_result = None
-        try:
-            dialog = CameraOffsetsDialog(root, title="Camera Offsets", cameras = cameras)
-            dialog.update_idletasks()
-            
-            dialog_result = dialog.result
-
-            
-        finally:
-            root.destroy()
-        return dialog_result
-
-    camera_offsets = show_dialog_with_editable_camera_offsets(cameras)
     if (camera_offsets == None):
         print_warning("Operation cancelled by user")
         exit()
@@ -630,10 +640,12 @@ try:
             
             # print_debug(f"Clip '{clip.GetName()}' (Camera {camera_name}): Start TC = {start_timecode}, End TC = {end_timecode}")
             
-            nb_clips_processed += 1
-            progress_bar["value"] = float(nb_clips_processed) / nb_clips_total * 100
-            progress_label["text"] = f"Setting clips time codes and angles... ({nb_clips_processed} of {nb_clips_total})"
-            progress_window.update_idletasks()
+            nb_clips_processed += 1            
+            
+            update_progress_bar(float(nb_clips_processed) / nb_clips_total * 100, f"Setting clips time codes and angles... ({nb_clips_processed} of {nb_clips_total})")
+            
+    progress_window.destroy()
+    messagebox.showinfo("Information", "Time codes and camera names have been set for all clips.")
     
 except Exception as e:
     print_error(str(e))
